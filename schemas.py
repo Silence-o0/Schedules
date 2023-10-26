@@ -1,6 +1,10 @@
+import datetime
+
 from pydantic import BaseModel
 
 
-class Lesson(BaseModel):
+class FieldOfStudy(BaseModel):
     id: int
+    short_title: str
     title: str
+    created_at: datetime.datetime
