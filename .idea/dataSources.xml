@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:postgresql://dumbo.db.elephantsql.com:5432/hcitzqig</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="postgres@127.0.0.1" uuid="549ef02d-e756-4e64-b61f-0f0294f42515">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://127.0.0.1:5433/postgres</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

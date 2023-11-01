@@ -4,6 +4,7 @@ from typing import List
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Enum, func, UniqueConstraint, DateTime
 from sqlalchemy.orm import relationship, DeclarativeBase, mapped_column, Mapped
+from sqlalchemy.sql.functions import current_timestamp
 from sqlalchemy.testing.schema import Table
 
 from database import Base
@@ -74,7 +75,7 @@ class Group(Base):
     field_of_study_id: Mapped[int] = mapped_column(ForeignKey("FieldOfStudy.id"))
     group_name: Mapped[str] = mapped_column(String(8), nullable=False)
     course: Mapped[int] = mapped_column(nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     field_of_study: Mapped["FieldOfStudy"] = relationship(back_populates="groups")
     academic_term: Mapped["AcademicTerm"] = relationship(back_populates="groups")
@@ -88,7 +89,7 @@ class FieldOfStudy(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     short_title: Mapped[str] = mapped_column(String(2), nullable=False)
     title: Mapped[str] = mapped_column(String(30), nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     groups: Mapped[Group | None] = relationship(back_populates="field_of_study")
 
@@ -124,7 +125,7 @@ class Exam(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("Subject.id"))
     date: Mapped[datetime.datetime] = mapped_column(nullable=True)
     last_edited_at: Mapped[datetime.datetime] = mapped_column(nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     groups: Mapped[List["Group"]] = relationship(secondary=GroupExam, back_populates="exams")
     teachers: Mapped[List["Teacher"]] = relationship(secondary=ExamTeacher, back_populates="exams")
@@ -155,7 +156,7 @@ class Teacher(Base):
     position: Mapped[TeacherPosition] = mapped_column(nullable=True)
     birthdate: Mapped[datetime.datetime] = mapped_column(nullable=True)
     last_edited_at: Mapped[datetime.datetime] = mapped_column(nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     exams: Mapped[List["Exam"]] = relationship(secondary=ExamTeacher, back_populates="teachers")
     subjects: Mapped[List["SubjectTeacher"]] = relationship(back_populates="teacher")
@@ -167,7 +168,7 @@ class Subject(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     short_title: Mapped[str] = mapped_column(String(10), nullable=False)
     title: Mapped[str] = mapped_column(String(60), nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     teachers: Mapped[List["SubjectTeacher"]] = relationship(back_populates="subject")
     exam: Mapped["Exam"] = relationship(back_populates="subject")
@@ -182,7 +183,7 @@ class RecordInSchedule(Base):
     day_of_week: Mapped[DayOfWeek] = mapped_column(nullable=False)
     type_of_week: Mapped[TypeOfWeek] = mapped_column(nullable=False)
     link: Mapped[str] = mapped_column(String(100), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     teachers: Mapped[List["SubjectTeacher"]] = relationship(back_populates="subject")
     exam: Mapped["Exam"] = relationship(back_populates="subject")
@@ -194,7 +195,7 @@ class UserRole(Base):
     __tablename__ = "UserRole"
     user_id: Mapped[int] = mapped_column(ForeignKey("User.id"), primary_key=True)
     role_id: Mapped[int] = mapped_column(ForeignKey("Role.id"), primary_key=True)
-    assigned_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    assigned_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     user: Mapped["User"] = relationship(back_populates="roles")
     role: Mapped["Role"] = relationship(back_populates="users")
@@ -205,7 +206,7 @@ class Role(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(30), nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     users: Mapped[List["UserRole"]] = relationship(back_populates="role")
 
@@ -218,7 +219,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(40), nullable=False)
     password: Mapped[str] = mapped_column(String(50), nullable=False)
     last_edited_at: Mapped[datetime.datetime] = mapped_column(nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(nullable=False, server_default='current_timestamp')
 
     roles: Mapped[List["UserRole"]] = relationship(back_populates="user")
 
