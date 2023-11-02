@@ -1,0 +1,218 @@
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION citext;
+
+
+--Add new academic year and also add terms of it.
+CREATE OR REPLACE PROCEDURE add_academic_year(year integer)
+LANGUAGE plpgsql
+AS $$
+DECLARE first_term_id integer;
+DECLARE second_term_id integer;
+DECLARE academic_year_exists integer;
+BEGIN
+academic_year_exists := 0;
+SELECT count("id") INTO academic_year_exists
+FROM "AcademicYear" y
+WHERE y.start_year = year
+LIMIT 1;
+IF year >= 2000 AND year <= 2099 AND academic_year_exists < 1 THEN
+INSERT INTO "AcademicTerm" DEFAULT VALUES RETURNING id INTO first_term_id;
+INSERT INTO "AcademicTerm" DEFAULT VALUES RETURNING id INTO second_term_id;
+INSERT INTO "AcademicYear"(start_year, term1_id, term2_id) VALUES (year, first_term_id, second_term_id);
+END IF;
+END $$;
+
+CALL add_academic_year(2023);
+
+
+--View all users and their roles
+CREATE OR REPLACE VIEW view_all_users AS
+    SELECT U.id, username, email, string_agg(R.title, ', ') AS role_list,
+           last_edited_at, U.created_at
+    FROM "User" U
+    JOIN "UserRole" UR on U.id = UR.user_id
+    JOIN "Role" R on R.id = UR.role_id
+    GROUP BY U.id;
+
+SELECT *
+From view_all_users;
+
+
+--Edit last_edited_at when add or delete role for them
+CREATE OR REPLACE FUNCTION edit_user_role() RETURNS TRIGGER AS $edit_user_role_trigger$
+BEGIN
+IF (TG_OP = 'DELETE') THEN
+    UPDATE "User" SET last_edited_at = current_timestamp  WHERE id = OLD.user_id;
+ELSIF (TG_OP = 'INSERT') THEN
+    UPDATE "User" SET last_edited_at = NEW.assigned_at  WHERE id = NEW.user_id;
+END IF;
+RETURN NULL;
+END
+$edit_user_role_trigger$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER edit_user_role_trigger
+    AFTER INSERT OR DELETE ON "UserRole"
+    FOR EACH ROW
+    EXECUTE FUNCTION edit_user_role();
+
+
+--Edit last_edited_at for users when update them.
+CREATE OR REPLACE FUNCTION edit_user() RETURNS TRIGGER AS $edit_user_trigger$
+BEGIN
+UPDATE "User" SET last_edited_at = current_timestamp WHERE id = OLD.id;
+RETURN NULL;
+END
+$edit_user_trigger$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER edit_user_trigger
+    AFTER UPDATE ON "User"
+    FOR EACH ROW
+    WHEN (pg_trigger_depth() < 1)
+    EXECUTE FUNCTION edit_user();
+
+
+--Edit last_edited_at for exams when update them.
+CREATE OR REPLACE FUNCTION edit_exam() RETURNS TRIGGER AS $edit_exam_trigger$
+BEGIN
+UPDATE "Exam" SET last_edited_at = current_timestamp WHERE id = OLD.id;
+RETURN NULL;
+END
+$edit_exam_trigger$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER edit_exam_trigger
+    AFTER UPDATE ON "Exam"
+    FOR EACH ROW
+    WHEN (pg_trigger_depth() < 1)
+    EXECUTE FUNCTION edit_exam();
+
+
+--Edit last_edited_at for teachers when update them.
+CREATE OR REPLACE FUNCTION edit_teacher() RETURNS TRIGGER AS $edit_teacher_trigger$
+BEGIN
+UPDATE "Teacher" SET last_edited_at = current_timestamp WHERE id = OLD.id;
+RETURN NULL;
+END
+$edit_teacher_trigger$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER edit_teacher_trigger
+    AFTER UPDATE ON "Teacher"
+    FOR EACH ROW
+    WHEN (pg_trigger_depth() < 1)
+    EXECUTE FUNCTION edit_teacher();
+
+
+--Create new user
+CREATE DOMAIN domain_email AS citext
+CHECK(
+   VALUE ~ '^\w+@[a-zA-Z_]+?\.[a-zA-Z]{2,3}$'
+);
+
+CREATE OR REPLACE PROCEDURE create_user(un varchar, em varchar, pass varchar)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+IF count(em::domain_email) > 0 THEN
+INSERT INTO "User"(username, email, password) VALUES (un, em, crypt(pass, gen_salt('xdes')));
+END IF;
+END $$;
+
+CALL create_user('user1', 'user1@gmail.com', 'pass123');
+
+
+--Create new record to schedule
+CREATE OR REPLACE PROCEDURE create_schedule_record(group_id_val integer, teacher_id_val integer, subject_id_val integer,
+type_of_pair_val typeoflesson, pair_num_val pairnum, day_of_week_val dayofweek,
+type_of_week_val typeofweek)
+LANGUAGE plpgsql
+AS $$
+DECLARE subject_teacher_id_val integer;
+DECLARE record_id_val integer;
+BEGIN
+SELECT id INTO subject_teacher_id_val
+FROM "SubjectTeacher" ST
+WHERE ST.subject_id = subject_id_val AND ST.teacher_id = teacher_id_val AND
+      ST.type_of_lesson = type_of_pair_val;
+IF subject_teacher_id_val is NULL THEN
+    INSERT INTO "SubjectTeacher"(subject_id, teacher_id, type_of_lesson) VALUES (subject_id_val, teacher_id_val, type_of_pair_val)
+    RETURNING id INTO subject_teacher_id_val;
+END IF;
+INSERT INTO "RecordInSchedule"(subject_teacher_id, pair_num, day_of_week, type_of_week)
+    VALUES (subject_teacher_id_val, pair_num_val, day_of_week_val, type_of_week_val)
+    RETURNING id INTO record_id_val;
+INSERT INTO "GroupRecord"(lesson_id, group_id)
+    VALUES (record_id_val, group_id_val);
+END $$;
+
+CALL create_schedule_record(1, 1, 6,
+    typeoflesson 'LECTURE', pairnum 'THIRD',
+    dayofweek 'MONDAY', typeofweek 'BOTH');
+
+
+--Change all assistant to lecturer if they have lecture in schedule
+CREATE OR REPLACE PROCEDURE change_assistant_to_lecturer()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+UPDATE "Teacher"
+  SET Position = 'LECTURER'
+  WHERE id IN (
+    SELECT T.id
+    FROM "Teacher" T
+    JOIN "SubjectTeacher" ST ON T.id = ST.teacher_id
+    WHERE T.Position = 'ASSISTANT' AND ST.type_of_lesson = 'LECTURE'
+  );
+END $$;
+
+CALL change_assistant_to_lecturer();
+
+
+--Count academic hours of certain teacher
+CREATE OR REPLACE FUNCTION count_academic_hours(teacher_id_val integer)
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  total_hours INT := 0;
+BEGIN
+  SELECT SUM(
+    CASE
+      WHEN RS.type_of_week = 'BOTH' THEN 2
+      ELSE 1
+    END
+  )
+  INTO total_hours
+  FROM "Teacher" T
+  JOIN "SubjectTeacher" ST ON T.id = ST.teacher_id
+  JOIN "RecordInSchedule" RS ON ST.id = RS.subject_teacher_id
+  WHERE T.id = teacher_id_val;
+  RETURN total_hours;
+END $$;
+
+SELECT count_academic_hours(1);
+
+
+CREATE OR REPLACE VIEW view_group_schedule AS
+SELECT G.id AS group_id, RS.pair_num, RS.day_of_week, RS.type_of_week
+FROM "Group" G
+JOIN "GroupRecord" GR ON G.id = GR.group_id
+JOIN "RecordInSchedule" RS ON GR.lesson_id = RS.id
+ORDER BY G.id, RS.day_of_week, RS.pair_num;
+
+
+--View all records in schedule
+CREATE OR REPLACE VIEW view_group_schedule AS
+SELECT
+  RS.pair_num, RS.day_of_week, RS.type_of_week,
+  S.short_title AS subject_title,
+  T.surname, T.first_name, T.middle_name
+FROM "Group" G
+JOIN "GroupRecord" GR ON G.id = GR.group_id
+JOIN "RecordInSchedule" RS ON GR.lesson_id = RS.id
+JOIN "SubjectTeacher" ST ON RS.subject_teacher_id = ST.id
+JOIN "Subject" S ON ST.subject_id = S.id
+JOIN "Teacher" T ON ST.teacher_id = T.id
+ORDER BY G.id, RS.day_of_week, RS.pair_num;
+
+SELECT *
+FROM view_group_schedule
+WHERE group_id = 1;
